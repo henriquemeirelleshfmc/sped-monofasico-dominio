@@ -1,0 +1,16 @@
+# Arquivos temporários e de saída do script
+tabela_temp.txt
+tabela_sped_ncms.json
+gerardadosporncm_COMPLETO.txt
+*.csv
+*.doc
+*.docx
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS Files
+.DS_Store
+Thumbs.db
