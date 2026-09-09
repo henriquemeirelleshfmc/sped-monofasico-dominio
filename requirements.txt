@@ -1,0 +1,5 @@
+﻿beautifulsoup4>=4.12
+pandas>=2.0
+openpyxl>=3.1
+pywin32>=306; sys_platform == "win32"
+rich>=13.0

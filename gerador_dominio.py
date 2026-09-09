@@ -1,6 +1,6 @@
-# ============================================================================
-# SPED Monofásico → Domínio Sistemas
-# Gerador automático de arquivo de importação de NCMs e Impostos
+﻿# ============================================================================
+# TRIBUTA NF-e - Gerador Automático de Arquivo de Importação
+# SPED Monofásico -> Domínio Sistemas
 #
 # Autor : Henrique Meirelles (github.com/henriquemeirelleshfmc)
 # Repo  : https://github.com/henriquemeirelleshfmc/sped-monofasico-dominio
@@ -9,6 +9,7 @@
 
 import os
 import re
+import sys
 import json
 import difflib
 import urllib.request
@@ -16,6 +17,17 @@ import io
 import pandas as pd
 from datetime import datetime
 from bs4 import BeautifulSoup
+
+# Interface visual rica no terminal
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.prompt import Prompt
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+from rich import box
+
+# Instância global do console Rich
+import sys; sys.stdout.reconfigure(encoding="utf-8", errors="replace"); console = Console(force_terminal=True)
 
 
 # ---------------------------------------------------------------------------
@@ -114,11 +126,11 @@ def extract_txt_from_doc(doc_path):
         word.Visible = False
         doc = word.Documents.Open(os.path.abspath(doc_path))
         txt_path = os.path.abspath('tabela_temp.txt')
-        doc.SaveAs(txt_path, FileFormat=2)  # FileFormat=2 → wdFormatText
+        doc.SaveAs(txt_path, FileFormat=2)  # FileFormat=2 é wdFormatText
         doc.Close()
         return txt_path
     except Exception as e:
-        print(f'Erro ao converter o arquivo DOC: {e}')
+        console.print(f'[red]Erro ao converter o arquivo DOC:[/red] {e}')
         return None
     finally:
         try:
@@ -140,7 +152,6 @@ def download_latest_sped_table():
     Retorna o nome do arquivo baixado, ou None em caso de falha.
     Se a conexão falhar, o script segue usando um arquivo local como fallback.
     """
-    print('Procurando a versão mais recente da Tabela 4.3.10 no site do SPED...')
     url = 'http://sped.rfb.gov.br/pasta/show/1616'
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -155,12 +166,11 @@ def download_latest_sped_table():
                 match = re.search(r'/item/show/(\d+)', href)
                 if match:
                     target_id = match.group(1)
-                    print(f'Encontrada no site: {a.text.strip()}')
+                    console.print(f'[green]+[/green] Encontrada no site: [cyan]{a.text.strip()}[/cyan]')
                     break
 
         if target_id:
             download_url = f'http://sped.rfb.gov.br/arquivo/download/{target_id}'
-            print('Baixando automaticamente a tabela atualizada...')
 
             # Remove versões anteriores baixadas pelo script para não acumular lixo
             for f in os.listdir('.'):
@@ -175,13 +185,13 @@ def download_latest_sped_table():
             resp = urllib.request.urlopen(req_dl)
             with open(filename, 'wb') as f:
                 f.write(resp.read())
-            print(f'Download concluído: {filename}\n')
+            console.print(f'[green]+[/green] Download concluído: [bold]{filename}[/bold]\n')
             return filename
         else:
-            print('Não foi possível encontrar a tabela 4.3.10 no site. Tentando usar arquivo local...\n')
+            console.print('[yellow]![/yellow] Não foi possível encontrar a tabela 4.3.10 no site. Tentando usar arquivo local...\n')
             return None
     except Exception as e:
-        print(f'Erro ao baixar a tabela: {e}. Tentando usar arquivo local...\n')
+        console.print(f'[yellow]![/yellow] Erro ao baixar a tabela: {e}. Tentando usar arquivo local...\n')
         return None
 
 
@@ -206,11 +216,10 @@ def download_confaz_cest():
     if os.path.exists(cache_path):
         cache_age = datetime.now().timestamp() - os.path.getmtime(cache_path)
         if cache_age < 30 * 24 * 3600:  # 30 dias em segundos
-            print('Usando cache local da tabela CEST do CONFAZ...')
+            console.print('[dim]  Usando cache local da tabela CEST do CONFAZ...[/dim]')
             with open(cache_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
 
-    print('Baixando tabela CEST do CONFAZ (Convênio ICMS 52/17)...')
     url = 'https://www.confaz.fazenda.gov.br/legislacao/convenios/2017/CV052_17'
     try:
         req = urllib.request.Request(url, headers={
@@ -284,17 +293,17 @@ def download_confaz_cest():
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(cest_db, f, indent=2, ensure_ascii=False)
 
-        print(f'Tabela CEST extraída: {len(cest_db)} NCMs mapeados com CEST.\n')
+        console.print(f'[green]+[/green] Tabela CEST extraída: [bold]{len(cest_db)}[/bold] NCMs mapeados com CEST.\n')
         return cest_db
 
     except Exception as e:
-        print(f'Erro ao baixar tabela CEST: {e}.')
+        console.print(f'[red]x[/red] Erro ao baixar tabela CEST: {e}.')
         # Tenta usar cache antigo como fallback
         if os.path.exists(cache_path):
-            print('Usando cache antigo da tabela CEST como fallback...\n')
+            console.print('[yellow]![/yellow] Usando cache antigo da tabela CEST como fallback...\n')
             with open(cache_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        print('Nenhum cache disponível. Prosseguindo sem CEST (desempate desabilitado).\n')
+        console.print('[red]x[/red] Nenhum cache disponível. Prosseguindo sem CEST (desempate desabilitado).\n')
         return {}
 
 
@@ -314,12 +323,10 @@ def download_tipi_excel():
     if os.path.exists(cache_path):
         cache_age = datetime.now().timestamp() - os.path.getmtime(cache_path)
         if cache_age < 30 * 24 * 3600:
-            print('Usando cache local da tabela TIPI...')
+            console.print('[dim]  Usando cache local da tabela TIPI...[/dim]')
             with open(cache_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
 
-    print('Baixando tabela TIPI (Excel) da Receita Federal...')
-    # URL de exemplo (pode ser ajustada para o link direto mais recente do Gov.br)
     url = 'https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/legislacao/documentos-e-arquivos/tipi.xlsx'
     
     tipi_db = {}
@@ -328,9 +335,6 @@ def download_tipi_excel():
         with urllib.request.urlopen(req, timeout=30) as response:
             excel_data = response.read()
             
-        print('Processando arquivo Excel com pandas...')
-        # Dependendo da formatação da RFB, lemos a aba principal.
-        # Geralmente as colunas de interesse caem no índice 0 (NCM), 1 (EX), 2 (Descrição)
         df = pd.read_excel(io.BytesIO(excel_data), dtype=str, engine='openpyxl')
         
         # Iterar sobre as linhas e extrair NCM, EX e Descrição
@@ -358,24 +362,63 @@ def download_tipi_excel():
         with open(cache_path, 'w', encoding='utf-8') as f:
             json.dump(tipi_db, f, indent=2, ensure_ascii=False)
             
-        print(f'Tabela TIPI processada: {len(tipi_db)} NCMs com Exceções mapeados.\n')
+        console.print(f'[green]+[/green] Tabela TIPI processada: [bold]{len(tipi_db)}[/bold] NCMs com Exceções mapeados.\n')
         return tipi_db
 
     except Exception as e:
-        print(f'Erro ao baixar/processar TIPI: {e}')
+        console.print(f'[red]x[/red] Erro ao baixar/processar TIPI: {e}')
         if os.path.exists(cache_path):
-            print('Tentando usar cache antigo da TIPI como fallback...\n')
+            console.print('[yellow]![/yellow] Tentando usar cache antigo da TIPI como fallback...\n')
             with open(cache_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        print('Nenhum cache disponível. O desempate por EX usará fallback manual.\n')
+        console.print('[red]x[/red] Nenhum cache disponível. O desempate por EX usará fallback manual.\n')
         return {}
+
+
+# ---------------------------------------------------------------------------
+#  Carregamento do mapa manual de overrides (CEST forçado)
+# ---------------------------------------------------------------------------
+
+def load_manual_overrides():
+    """
+    Carrega o dicionário de overrides manuais de um ficheiro JSON externo.
+    Isso permite que o analista fiscal edite os mapeamentos sem tocar no código.
+    
+    Retorna um dicionário { ncm: cest_code }.
+    """
+    override_path = os.path.join(os.path.dirname(__file__), 'data', 'manual_overrides.json')
+    
+    # Fallback inline para garantir funcionamento mínimo
+    FALLBACK_MAP = {
+        '2203': '0302100',
+        '22071000': '0600101',
+        '22072000': '0600100',
+        '22072010': '0600100',
+        '21069010': '0301000',
+        '22011000': '0300100',
+        '22029000': '0301100',
+        '22029900': '0301100',
+    }
+    
+    if os.path.exists(override_path):
+        try:
+            with open(override_path, 'r', encoding='utf-8') as f:
+                raw = json.load(f)
+            # Extrai apenas o campo 'cest' de cada entrada
+            result = {ncm: info['cest'] for ncm, info in raw.items() if 'cest' in info}
+            console.print(f'[dim]  Overrides manuais carregados: {len(result)} NCMs mapeados[/dim]')
+            return result
+        except Exception as e:
+            console.print(f'[yellow]![/yellow] Erro ao ler overrides ({override_path}): {e}. Usando fallback inline.')
+    
+    return FALLBACK_MAP
 
 
 # ---------------------------------------------------------------------------
 #  Fuzzy matching de descrições para desempate por CEST
 # ---------------------------------------------------------------------------
 
-def find_best_cest(sped_desc, ncm, cest_db):
+def find_best_cest(sped_desc, ncm, cest_db, manual_map=None):
     """
     Compara a descrição de uma Natureza da Receita (SPED) com as descrições
     dos registros CEST do CONFAZ.
@@ -387,20 +430,9 @@ def find_best_cest(sped_desc, ncm, cest_db):
       - cest_code: o código CEST mais próximo (str) ou '' se score < 0.35
       - score: float de 0 a 1 indicando a similaridade
     """
-    # Override manual para casos onde a semântica do SPED/TIPI diverge do CONFAZ
-    # ou onde o SPED utiliza NCMs desatualizados.
-    MANUAL_CEST_MAP = {
-        '2203': '0302100',          # Cervejas de malte
-        '22071000': '0600101',      # Álcool etílico hidratado combustível
-        '22072010': '0600100',      # Álcool etílico anidro combustível
-        '21069010': '0301000',      # Preparações compostas (Xaropes para refrigerantes)
-        '22011000': '0300100',      # Águas minerais (garante o CEST padrão)
-        '22029000': '0301100',      # Refrescos / Energéticos (NCM desatualizado no SPED)
-        '22029900': '0301100',      # Refrescos / Energéticos (NCM atualizado)
-    }
-    
-    if ncm in MANUAL_CEST_MAP:
-        return MANUAL_CEST_MAP[ncm], 1.0
+    # Override manual (carregado do JSON externo ou fallback inline)
+    if manual_map and ncm in manual_map:
+        return manual_map[ncm], 1.0
 
     stopwords = {'de', 'do', 'da', 'dos', 'das', 'e', 'ou', 'em', 'com', 'a', 'o', 'as', 'os',
                  'para', 'por', 'no', 'na', 'nos', 'nas', 'um', 'uma', 'que', 'se', 'ao', 'ate',
@@ -424,7 +456,7 @@ def find_best_cest(sped_desc, ncm, cest_db):
         vol_score = 0.0
         if v1 and v2:
             if v1 & v2:
-                vol_score = 1.0  # Bônus enorme se o volume bater
+                vol_score = 1.0  # Bónus enorme se o volume bater
             else:
                 vol_score = -0.5 # Penalidade se tiverem volumes diferentes
                 
@@ -466,19 +498,34 @@ def main():
       1. Coleta os parâmetros do usuário (vigência e regime tributário)
       2. Baixa ou localiza a tabela SPED 4.3.10
       3. Extrai os códigos, NCMs e Exceções (EX) da tabela
-      4. Aplica desempate em 3 níveis (NCM único → EX → CEST/CONFAZ)
+      4. Aplica desempate em 3 níveis (NCM único -> EX -> CEST/CONFAZ)
       5. Gera o arquivo .txt pronto para importação no ERP Domínio Sistemas
     """
-    print("=" * 60)
-    print(" GERADOR DE ARQUIVO DE NCMs PARA A DOMÍNIO SISTEMAS ")
-    print("=" * 60)
+    # --- Banner ---
+    console.print()
+    console.print(Panel.fit(
+        "[bold bright_cyan]TRIBUTA NF-e[/bold bright_cyan]\n"
+        "[dim]Gerador Automático de NCMs para Domínio Sistemas[/dim]\n"
+        "[dim]Tabela SPED 4.3.10 - Monofásica (Bebidas Frias)[/dim]",
+        border_style="bright_blue",
+        padding=(1, 4),
+    ))
+    console.print()
 
     # --- Etapa 1: Coleta de parâmetros do usuário ---
-    vigencia_input = input("Digite a data da vigência inicial (ex: 01/01/2026): ").strip()
-    if not vigencia_input:
-        vigencia_input = "01/01/2026"
+    vigencia_input = Prompt.ask(
+        "[bold cyan]Data da vigência inicial[/bold cyan]",
+        default="01/01/2026"
+    )
 
-    regime_input = input("Qual o regime da empresa? (SN = Simples Nacional, LR = Lucro Real, LP = Lucro Presumido): ").strip().upper()
+    regime_input = Prompt.ask(
+        "[bold cyan]Regime da empresa[/bold cyan]",
+        choices=["SN", "LR", "LP"],
+        default="LR"
+    ).upper()
+
+    regime_nomes = {'LR': 'Lucro Real', 'LP': 'Lucro Presumido', 'SN': 'Simples Nacional'}
+    console.print(f'\n[dim]  Regime selecionado: [bold]{regime_nomes.get(regime_input, regime_input)}[/bold][/dim]')
 
     # Mapeia o regime para o código de Tipo de Contribuição esperado pelo Domínio
     if regime_input == 'LR':
@@ -486,41 +533,65 @@ def main():
     elif regime_input == 'LP':
         tipo_contrib_input = 'C'  # Cumulativo
     else:
-        tipo_contrib_input = ''   # Simples Nacional ou outro → em branco
+        tipo_contrib_input = ''   # Simples Nacional ou outro -> em branco
 
     # --- Etapa 2: Obtenção da tabela SPED ---
-    print("\nIniciando a extração dos NCMs...")
+    console.print()
+    console.rule("[bold bright_cyan]Etapa 1 - Obtenção da Tabela SPED[/bold bright_cyan]")
 
-    # Tenta baixar a versão mais recente direto do portal do SPED
-    txt_path = 'tabela_temp.txt'
-    baixado = download_latest_sped_table()
+    with Progress(
+        SpinnerColumn("dots"),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Procurando tabela 4.3.10 no portal do SPED...", total=None)
+        txt_path = 'tabela_temp.txt'
+        baixado = download_latest_sped_table()
+        progress.remove_task(task)
 
     if baixado:
-        # Sucesso no download → converte o .doc baixado para .txt
-        print(f"Convertendo tabela recém-baixada ({baixado}) para TXT...")
-        txt_path = extract_txt_from_doc(baixado)
+        # Sucesso no download -> converte o .doc baixado para .txt
+        with Progress(
+            SpinnerColumn("dots"),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task(f"Convertendo {baixado} para TXT...", total=None)
+            txt_path = extract_txt_from_doc(baixado)
+            progress.remove_task(task)
     else:
         # Fallback: procura um arquivo .doc ou .txt local que contenha "Tabela" no nome
         if not os.path.exists(txt_path):
             doc_files = [f for f in os.listdir('.') if f.lower().endswith('.doc') and 'tabela' in f.lower()]
             if doc_files:
-                print(f"Encontrado arquivo DOC local: {doc_files[0]}")
-                print("Convertendo DOC para TXT... (isso pode levar alguns segundos)")
-                txt_path = extract_txt_from_doc(doc_files[0])
+                console.print(f'[dim]  Encontrado arquivo DOC local: {doc_files[0]}[/dim]')
+                with Progress(
+                    SpinnerColumn("dots"),
+                    TextColumn("[progress.description]{task.description}"),
+                    console=console,
+                    transient=True,
+                ) as progress:
+                    task = progress.add_task("Convertendo DOC para TXT...", total=None)
+                    txt_path = extract_txt_from_doc(doc_files[0])
+                    progress.remove_task(task)
             else:
                 txt_files = [f for f in os.listdir('.') if f.lower().endswith('.txt') and 'tabela' in f.lower()]
                 if txt_files:
                     txt_path = txt_files[0]
                 else:
-                    print("ERRO: Nenhuma tabela SPED (.doc ou .txt) encontrada na pasta.")
+                    console.print("[red]x ERRO: Nenhuma tabela SPED (.doc ou .txt) encontrada na pasta.[/red]")
                     return
 
     if not txt_path or not os.path.exists(txt_path):
-        print("ERRO: Falha ao obter o arquivo de texto da tabela.")
+        console.print("[red]x ERRO: Falha ao obter o arquivo de texto da tabela.[/red]")
         return
 
     # --- Etapa 3: Leitura e extração dos códigos, NCMs e Exceções (EX) ---
-    print("Lendo o conteúdo da tabela...")
+    console.print()
+    console.rule("[bold bright_cyan]Etapa 2 - Extração de NCMs[/bold bright_cyan]")
+
     with open(txt_path, 'r', encoding='latin1', errors='replace') as f:
         text = f.read()
 
@@ -528,7 +599,6 @@ def main():
     blocks = re.split(r'(?m)^([1-9]\d{2})$', text)
     data = {}
 
-    print("Extraindo os Códigos, NCMs e Exceções (EX)...")
     for i in range(1, len(blocks), 2):
         code = blocks[i]
         block_text = blocks[i+1].strip()
@@ -558,15 +628,13 @@ def main():
     json_path = 'tabela_sped_ncms.json'
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
-    print(f"JSON estruturado gerado em: {json_path}")
+    console.print(f'[green]+[/green] {len(data)} Naturezas da Receita extraídas da tabela SPED')
 
     # --- Etapa 4: Desempate em 3 níveis + Regras de validação ---
-    print("Aplicando regras de validação e desempate de NCMs duplicados...")
+    console.print()
+    console.rule("[bold bright_cyan]Etapa 3 - Desempate e Validação[/bold bright_cyan]")
 
-    # A regra foi movida para dentro do loop individual de cada código para evitar
-    # apagar NCMs analíticos de códigos que não possuem o sintético.
-
-    # 4.2: Mapear NCM → lista de códigos SPED onde aparece (para detectar duplicidades)
+    # 4.2: Mapear NCM -> lista de códigos SPED onde aparece (para detectar duplicidades)
     ncm_to_codes = {}
     for code, info in data.items():
         for entry in info['ncms']:
@@ -576,22 +644,23 @@ def main():
     # Identificar NCMs duplicados (presentes em 2+ códigos SPED)
     duplicated_ncms = {ncm for ncm, codes in ncm_to_codes.items() if len(codes) > 1}
 
-    # 4.3: Baixar CEST do CONFAZ somente se houver NCMs duplicados para desempatar
+    # 4.3: Carregar overrides manuais e baixar tabelas de apoio
+    manual_map = load_manual_overrides()
     cest_db = {}
     tipi_db = {}
     if duplicated_ncms:
-        print(f"Encontrados {len(duplicated_ncms)} NCMs duplicados. Baixando tabela CEST para desempate...")
+        console.print(f'[yellow]![/yellow] {len(duplicated_ncms)} NCMs duplicados encontrados. Iniciando desempate...')
         cest_db = download_confaz_cest()
-        tipi_db = download_tipi_excel() # <--- NOVA CHAMADA AQUI
+        tipi_db = download_tipi_excel()
     else:
-        print("Nenhum NCM duplicado encontrado. Desempate por CEST não é necessário.")
+        console.print('[green]+[/green] Nenhum NCM duplicado encontrado. Desempate por CEST não é necessário.')
 
     # 4.4: Preparar arquivo de log para NCMs sem CEST
     log_path = 'ncm_sem_cest_revisao.log'
     log_entries = []
 
     # 4.5: Desempate em 3 Níveis e montagem da lista final
-    # Chave composta: (ncm, cest) — GLOBALMENTE ÚNICA para não dar erro na Domínio
+    # Chave composta: (ncm, cest) - GLOBALMENTE ÚNICA para não dar erro na Domínio
     seen_keys = set()
     for code in sorted(data.keys(), key=lambda x: int(x)):
         valid_entries = []
@@ -621,7 +690,7 @@ def main():
                     # Se não houver TIPI (NCM extinto), usa apenas a descrição SPED
                     desc_combinada = f"{sped_desc} | Exceção TIPI: {tipi_desc}" if tipi_desc else sped_desc
                     
-                    best_cest, score = find_best_cest(desc_combinada, ncm, cest_db)
+                    best_cest, score = find_best_cest(desc_combinada, ncm, cest_db, manual_map)
                     
                     # O override manual retorna score 1.0, garantindo a aprovação aqui
                     if score >= 0.40:
@@ -645,7 +714,7 @@ def main():
             # --- Nível 3: Desempate por CEST (fuzzy matching com CONFAZ) ---
             if cest_db:
                 sped_desc = data[code]['descricao']
-                best_cest, score = find_best_cest(sped_desc, ncm, cest_db)
+                best_cest, score = find_best_cest(sped_desc, ncm, cest_db, manual_map)
 
                 if score >= 0.35:
                     key = (ncm, best_cest)
@@ -654,7 +723,6 @@ def main():
                         valid_entries.append({'ncm': ncm, 'ex': ex, 'cest': best_cest})
                 else:
                     # Fallback: exporta com CEST vazio + registra no log
-                    # Chave igual à exportada para manter a unicidade global
                     key = (ncm, '')
                     if key not in seen_keys:
                         seen_keys.add(key)
@@ -665,7 +733,7 @@ def main():
                             f"Desc SPED: {sped_desc[:80]}"
                         )
             else:
-                # NCM duplicado sem dados no CONFAZ → exporta com CEST vazio + log
+                # NCM duplicado sem dados no CONFAZ -> exporta com CEST vazio + log
                 key = (ncm, '')
                 if key not in seen_keys:
                     seen_keys.add(key)
@@ -685,10 +753,11 @@ def main():
             f.write("  NCMs SEM CEST - REVISÃO MANUAL NECESSÁRIA\n")
             f.write("=" * 70 + "\n\n")
             f.write('\n'.join(log_entries) + '\n')
-        print(f"[AVISO] {len(log_entries)} NCMs sem correspondencia CEST registrados em: {log_path}")
 
     # --- Etapa 5: Geração do arquivo TXT para importação ---
-    print("Gerando o arquivo de texto para a Domínio...")
+    console.print()
+    console.rule("[bold bright_cyan]Etapa 4 - Geração do Arquivo[/bold bright_cyan]")
+
     csv_lines = [f'Vigencia;{vigencia_input};Vigencia_Inicial']
 
     for code, info in sorted(data.items(), key=lambda x: int(x[0])):
@@ -740,16 +809,36 @@ def main():
     with open(output_path, 'w', encoding='latin1', errors='ignore') as f:
         f.write('\n'.join(csv_lines) + '\n')
 
-    print(f"Arquivo gerado com sucesso em: {output_path}")
+    console.print(f'[green]+[/green] Arquivo gerado: [bold]{output_path}[/bold]')
 
-    # Estatísticas finais
+    # --- Resumo Final Estilizado ---
     total_ncms = sum(len(info.get('ncms_final', [])) for info in data.values())
     total_items = sum(1 for info in data.values() if info.get('ncms_final'))
-    print(f"\n--- Resumo ---")
-    print(f"Itens (Naturezas de Receita): {total_items}")
-    print(f"NCMs exportados: {total_ncms}")
+
+    console.print()
+    summary = Table(
+        title="Resumo da Exportação",
+        box=box.ROUNDED,
+        title_style="bold bright_cyan",
+        show_header=True,
+        header_style="bold",
+    )
+    summary.add_column("Métrica", style="cyan", min_width=30)
+    summary.add_column("Valor", style="bold white", justify="right", min_width=10)
+
+    summary.add_row("Naturezas de Receita", str(total_items))
+    summary.add_row("NCMs Exportados", str(total_ncms))
+    summary.add_row("Vigência Inicial", vigencia_input)
+    summary.add_row("Regime Tributário", regime_nomes.get(regime_input, regime_input))
+
     if log_entries:
-        print(f"NCMs para revisão (sem CEST): {len(log_entries)}")
+        summary.add_row("NCMs para Revisão", f"[yellow]{len(log_entries)}[/yellow]")
+        summary.add_row("Arquivo de Log", f"[dim]{log_path}[/dim]")
+    else:
+        summary.add_row("NCMs para Revisão", "[green]0 - Tudo resolvido![/green]")
+
+    console.print(summary)
+    console.print()
 
 
 # ---------------------------------------------------------------------------
@@ -758,3 +847,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

@@ -1,0 +1,10 @@
+{
+  "2203":     {"cest": "0302100", "motivo": "Cervejas de malte"},
+  "22071000": {"cest": "0600101", "motivo": "Álcool etílico hidratado combustível"},
+  "22072000": {"cest": "0600100", "motivo": "Álcool etílico (genérico, carburante)"},
+  "22072010": {"cest": "0600100", "motivo": "Álcool etílico anidro combustível"},
+  "21069010": {"cest": "0301000", "motivo": "Preparações compostas (Xaropes para refrigerantes)"},
+  "22011000": {"cest": "0300100", "motivo": "Águas minerais (garante o CEST padrão)"},
+  "22029000": {"cest": "0301100", "motivo": "Refrescos / Energéticos (NCM desatualizado no SPED)"},
+  "22029900": {"cest": "0301100", "motivo": "Refrescos / Energéticos (NCM atualizado)"}
+}
