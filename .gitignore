@@ -1,4 +1,4 @@
-# Arquivos temporários e de saída do script
+﻿# Arquivos temporários e de saída do script
 tabela_temp.txt
 tabela_sped_ncms.json
 gerardadosporncm_COMPLETO.txt
@@ -18,3 +18,6 @@ Thumbs.db
 # Cache e Logs
 *_cache.json
 *.log
+
+# Pytest
+.pytest_cache/

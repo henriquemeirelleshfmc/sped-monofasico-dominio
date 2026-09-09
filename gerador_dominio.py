@@ -12,6 +12,7 @@ import re
 import sys
 import json
 import difflib
+from rapidfuzz import fuzz as rfuzz
 import urllib.request
 import io
 import pandas as pd
@@ -447,7 +448,7 @@ def find_best_cest(sped_desc, ncm, cest_db, manual_map=None):
         return set(vols)
     
     def combined_score(desc1, desc2):
-        fuzzy = difflib.SequenceMatcher(None, desc1.lower(), desc2.lower()).ratio()
+        fuzzy = rfuzz.token_sort_ratio(desc1.lower(), desc2.lower()) / 100.0
         t1, t2 = tokens(desc1), tokens(desc2)
         kw = len(t1 & t2) / min(len(t1), len(t2)) if t1 and t2 else 0.0
         
