@@ -113,31 +113,72 @@ def parse_ncms(text_block):
 
 
 # ---------------------------------------------------------------------------
-#  Conversão de DOC para TXT (via automação COM do Microsoft Word)
+#  Conversão de DOC para TXT (LibreOffice → Word COM → fallback)
 # ---------------------------------------------------------------------------
 
 def extract_txt_from_doc(doc_path):
     """
-    Abre um arquivo .doc usando o Microsoft Word (COM/Win32)
-    e salva como texto puro (.txt) para facilitar a leitura pelo script.
+    Converte um arquivo .doc para texto puro (.txt).
+    
+    Estratégia de conversão (por ordem de prioridade):
+      1. LibreOffice CLI (cross-platform, não requer licença)
+      2. Microsoft Word COM (Windows only, requer Word instalado)
+    
+    Retorna o caminho do .txt gerado, ou None em caso de falha.
     """
-    import win32com.client as win32
-    try:
-        word = win32.Dispatch('Word.Application')
-        word.Visible = False
-        doc = word.Documents.Open(os.path.abspath(doc_path))
-        txt_path = os.path.abspath('tabela_temp.txt')
-        doc.SaveAs(txt_path, FileFormat=2)  # FileFormat=2 é wdFormatText
-        doc.Close()
-        return txt_path
-    except Exception as e:
-        console.print(f'[red]Erro ao converter o arquivo DOC:[/red] {e}')
-        return None
-    finally:
+    import subprocess
+    txt_path = os.path.abspath('tabela_temp.txt')
+    abs_doc = os.path.abspath(doc_path)
+    out_dir = os.path.dirname(abs_doc)
+
+    # --- Tentativa 1: Microsoft Word COM (Windows — formato ideal para o parser) ---
+    if sys.platform == 'win32':
         try:
-            word.Quit()
-        except:
-            pass
+            import win32com.client as win32
+            word = win32.Dispatch('Word.Application')
+            word.Visible = False
+            doc = word.Documents.Open(abs_doc)
+            doc.SaveAs(txt_path, FileFormat=2)  # wdFormatText
+            doc.Close()
+            console.print('[dim]  Convertido via Microsoft Word[/dim]')
+            return txt_path
+        except Exception as e:
+            console.print(f'[yellow]![/yellow] Word COM falhou: {e}. Tentando LibreOffice...')
+        finally:
+            try:
+                word.Quit()
+            except:
+                pass
+
+    # --- Tentativa 2: LibreOffice CLI (cross-platform fallback) ---
+    soffice_paths = [
+        'soffice',  # PATH do sistema
+        r'C:\Program Files\LibreOffice\program\soffice.exe',
+        r'C:\Program Files (x86)\LibreOffice\program\soffice.exe',
+        '/usr/bin/soffice',
+        '/usr/local/bin/soffice',
+        '/Applications/LibreOffice.app/Contents/MacOS/soffice',
+    ]
+    for soffice in soffice_paths:
+        try:
+            result = subprocess.run(
+                [soffice, '--headless', '--convert-to', 'txt:Text(utf8)', '--outdir', out_dir, abs_doc],
+                capture_output=True, text=True, timeout=60
+            )
+            # O LibreOffice gera o .txt com o mesmo nome base
+            lo_output = abs_doc.rsplit('.', 1)[0] + '.txt'
+            if os.path.exists(lo_output):
+                # Renomeia para o nome padrão esperado pelo script
+                if lo_output != txt_path:
+                    import shutil
+                    shutil.move(lo_output, txt_path)
+                console.print('[dim]  Convertido via LibreOffice[/dim]')
+                return txt_path
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            continue
+
+    console.print('[red]x[/red] Nenhum conversor disponível (instale LibreOffice ou Microsoft Word)')
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -593,8 +634,17 @@ def main():
     console.print()
     console.rule("[bold bright_cyan]Etapa 2 - Extração de NCMs[/bold bright_cyan]")
 
-    with open(txt_path, 'r', encoding='latin1', errors='replace') as f:
-        text = f.read()
+    # Tenta UTF-8 primeiro (LibreOffice), fallback para latin1 (Word COM)
+    for enc in ['utf-8', 'latin1']:
+        try:
+            with open(txt_path, 'r', encoding=enc) as f:
+                text = f.read()
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        with open(txt_path, 'r', encoding='latin1', errors='replace') as f:
+            text = f.read()
 
     # Divide o texto usando os códigos SPED (3 dígitos isolados em uma linha) como separadores
     blocks = re.split(r'(?m)^([1-9]\d{2})$', text)
